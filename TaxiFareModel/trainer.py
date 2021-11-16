@@ -3,19 +3,25 @@ from sklearn.pipeline import make_pipeline, Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import RobustScaler, StandardScaler
 from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestRegressor
 from TaxiFareModel.encoders import TimeFeaturesEncoder, DistanceTransformer
 from TaxiFareModel.utils import compute_rmse
 from TaxiFareModel.data import get_data, clean_data
 from memoized_property import memoized_property
 import mlflow
 from mlflow.tracking import MlflowClient
+import joblib
+
+
+# imports for specific iterations
+from sklearn.ensemble import RandomForestRegressor
+# from xgboost import XGBRegressor
+# from sklearn.metrics import mean_squared_error
 
 
 class Trainer():
 
     MLFLOW_URI = "https://mlflow.lewagon.co/"
-    EXPERIMENT_NAME = "[GER] [Berlin] [mberneaud] test_model v2"  # 🚨 replace with your country code, city, github_nickname and model name and version
+    EXPERIMENT_NAME = "[GER] [Berlin] [mberneaud] NY Taxi Fare v1"  # 🚨 replace with your country code, city, github_nickname and model name and version
 
     def __init__(self, X, y):
         """
@@ -27,8 +33,10 @@ class Trainer():
         self.X = X
         self.y = y
 
-    def set_pipeline(self):
-        """defines the pipeline as a class attribute"""
+## Pipeline creation
+
+    def set_pipeline(self, regressor):
+        """defines the pipeline as a class attribute taking a regressor class object as input"""
         # feat engineering
         pipe_time = make_pipeline(TimeFeaturesEncoder(time_column='pickup_datetime'), StandardScaler())
         pipe_distance = make_pipeline(DistanceTransformer(), RobustScaler())
@@ -46,15 +54,24 @@ class Trainer():
         # model including the pipeline set as class attribute
         self.pipeline = Pipeline(
             steps=[('feat_eng_bloc',
-                    feat_eng_bloc), ('regressor', RandomForestRegressor())])
+                    feat_eng_bloc), ('xgboost_regressor', regressor)])
         return self.pipeline
+
+## Executing the model
 
     def run(self, **kwargs):
         """set and train the pipeline"""
-        self.fitted_pipe = self.set_pipeline()
-        self.fitted_pipe.fit(self.X, self.y, **kwargs)
+        self.fitted_pipe = self.set_pipeline(**kwargs)
+        self.fitted_pipe.fit(self.X, self.y)
         return self.fitted_pipe
 
+## Saving the model
+
+    def save_model(self):
+        """ Save the trained model into a model.joblib file """
+        joblib.dump(self.fitted_pipe, "model.joblib")
+
+## Evaluating the model
 
     def evaluate(self, X_test, y_test):
         """evaluates the pipeline on df_test and return the RMSE"""
@@ -66,6 +83,8 @@ class Trainer():
     def mlflow_client(self):
         mlflow.set_tracking_uri(self.MLFLOW_URI)
         return MlflowClient()
+
+## Model logging with ML flow
 
     @memoized_property
     def mlflow_experiment_id(self):
@@ -86,17 +105,24 @@ class Trainer():
         self.mlflow_client.log_metric(self.mlflow_run.info.run_id, key, value)
 
 
-
 if __name__ == "__main__":
-    data = get_data()  # get data
+    data = get_data(100_000)  # get data
     clean_data = clean_data(data)  # clean data
     X = clean_data.drop(columns="fare_amount") # Creating X
     y = clean_data["fare_amount"] # and y
     X_train, X_test, y_train , y_test = train_test_split(X, y, test_size=0.2) # Creating a holdout
     trainer = Trainer(X_train, y_train)  # hold out set is created during class instantiation
-    trainer.set_pipeline()  # pipeline creation
-    trainer.run()  # running, model stored in instance
-    score = trainer.evaluate(X_test, y_test)# evaluate
-    trainer.mlflow_log_param("model", "random forest")
-    trainer.mlflow_log_metric("rmse", score)
+    regressor = RandomForestRegressor(n_estimators=1000, n_jobs=8, min_samples_leaf=1)
+    trainer.run(regressor=regressor)  # running, model stored in instance
+    trainer.save_model() # Saving model in local joblib file
+    score = trainer.evaluate(X_test, y_test) # evaluate with RSME
+    trainer.mlflow_log_param("model", "random forest") # Logging parameters on remote MLFlow
+    trainer.mlflow_log_param("n_estimators",
+                             1000)  # Logging model params
+    trainer.mlflow_log_param("min_samples_leaf", 1)
+    trainer.mlflow_log_param("eval_metric",
+                             "mean_squared_error")
+    trainer.mlflow_log_param("sample_size",
+                             100_000)
+    trainer.mlflow_log_metric("rmse", score)  # Logging test RMSE on remote MFLow
     print(f"the model rmse is:{score:.4f}")
