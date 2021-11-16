@@ -1,0 +1,15 @@
+artifact_uri: file:///home/malte/code/mberneaud/TaxiFareModel/mlruns/1/090ca60a6b58449db2ccc2a7f40f710c/artifacts
+end_time: null
+entry_point_name: ''
+experiment_id: '1'
+lifecycle_stage: active
+name: ''
+run_id: 090ca60a6b58449db2ccc2a7f40f710c
+run_uuid: 090ca60a6b58449db2ccc2a7f40f710c
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1637070678070
+status: 1
+tags: []
+user_id: unknown
